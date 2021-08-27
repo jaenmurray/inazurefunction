@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.31605.320
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inazurefunction.Common", "inazurefunction.Common\inazurefunction.Common.csproj", "{D6D3EFA8-66C0-49D4-B27D-276C2326DB00}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "inazurefunction.Common", "inazurefunction.Common\inazurefunction.Common.csproj", "{D6D3EFA8-66C0-49D4-B27D-276C2326DB00}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inazurefunction.Functions", "inazurefunction.Functions\inazurefunction.Functions.csproj", "{7A3D8671-6AEE-476D-894F-A6989674BD86}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "inazurefunction.Functions", "inazurefunction.Functions\inazurefunction.Functions.csproj", "{7A3D8671-6AEE-476D-894F-A6989674BD86}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inazurefunction.Tests", "inazurefunction.Tests\inazurefunction.Tests.csproj", "{0B650B4A-D89B-49CA-B427-1B806D7CE24F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "inazurefunction.Tests", "inazurefunction.Tests\inazurefunction.Tests.csproj", "{0B650B4A-D89B-49CA-B427-1B806D7CE24F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
