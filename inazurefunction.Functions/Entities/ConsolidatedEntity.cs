@@ -5,7 +5,7 @@ namespace inazurefunction.Functions.Entities
 {
     public class ConsolidatedEntity : TableEntity
     {
-        public int idEmployee { get; set; }
+        public int IdEmployee { get; set; }
 
         public DateTime WorkedDate { get; set; }
 
