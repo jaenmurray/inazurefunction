@@ -68,7 +68,7 @@ namespace inazurefunction.Functions.Functions
                 });
             }
 
-            string filter = TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, short.Parse(record.IdEmployee.ToString()));
+            string filter = TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, int.Parse(record.IdEmployee.ToString()));
             TableQuery<EmployeeEntity> query = new TableQuery<EmployeeEntity>().Where(filter);
             TableQuerySegment<EmployeeEntity> RowsEmployees = await employeeTable.ExecuteQuerySegmentedAsync(query, null);
 
@@ -83,29 +83,38 @@ namespace inazurefunction.Functions.Functions
             EmployeeEntity RowEmployee = ListEmployees.OrderByDescending(o => o.DateReg).FirstOrDefault();
             string message = string.Empty;
 
-            if (RowEmployee.Type.Equals(record.Type))
+            try
+            {
+                if (RowEmployee.Type.Equals(record.Type))
+                {
+
+                    if (record.Type == 0)
+                    {
+                        message = "This employee already registered an entry (0).";
+                    }
+                    else
+                    {
+                        message = "This employee already checked out (1).";
+                    }
+
+                    return new BadRequestObjectResult(new Response
+                    {
+                        IsSuccess = false,
+                        Message = message
+                    });
+                }
+            }
+            catch (Exception)
             {
 
-                if (record.Type == 0)
-                {
-                    message = "This employee already registered an entry (0).";
-                }
-                else
-                {
-                    message = "This employee already checked out (1).";
-                }
-
-                return new BadRequestObjectResult(new Response
-                {
-                    IsSuccess = false,
-                    Message = message
-                });
+                log.LogInformation("Firts record stored for this employee.");
             }
+
 
             EmployeeEntity employeeEntity = new EmployeeEntity
             {
                 IdEmployee = record.IdEmployee,
-                DateReg = DateTime.UtcNow,
+                DateReg = Convert.ToDateTime(record.DateReg),
                 Type = record.Type,
                 IsConsolidated = false,
                 ETag = "*",
@@ -283,6 +292,205 @@ namespace inazurefunction.Functions.Functions
                 IsSuccess = true,
                 Message = message,
                 Result = employeeEntity
+
+            });
+        }
+
+
+        [FunctionName(nameof(ConsolidateProcess))]
+        public static async Task<IActionResult> ConsolidateProcess(
+                [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "consolidatedreg")] HttpRequest req,
+                [Table("employeereg", Connection = "AzureWebJobsStorage")] CloudTable employeeTable,
+                [Table("consolidatedreg", Connection = "AzureWebJobsStorage")] CloudTable consolidatedTable,
+                ILogger log)
+        {
+            log.LogInformation($"Consolidating completed function executed at: {DateTime.Now}"); ;
+
+            int consolCount = 0;
+
+            //Consulta los registros por consolidar
+            string filterNotConsolidatedID = TableQuery.GenerateFilterConditionForBool("IsConsolidated", QueryComparisons.Equal, false);
+
+            TableQuery<EmployeeEntity> queryToConsolidate = new TableQuery<EmployeeEntity>().Where(filterNotConsolidatedID);
+            TableQuerySegment<EmployeeEntity> records = await employeeTable.ExecuteQuerySegmentedAsync(queryToConsolidate, null);
+
+            List<EmployeeEntity> ListEmployees = new List<EmployeeEntity>();
+            foreach (EmployeeEntity Row in records)
+            {
+
+                ListEmployees.Add(Row);
+
+            }
+
+
+            ListEmployees.OrderByDescending(o => o.DateReg);
+
+            //Recorre los IdEmployee pendientes por consolidar
+            for (int i = 0; i < ListEmployees.Count;)
+            {
+
+
+                int? Id = ListEmployees[i].IdEmployee;
+
+
+                string filterEntriesByID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, int.Parse(Id.ToString())),
+                                    TableOperators.And, TableQuery.GenerateFilterConditionForInt("Type", QueryComparisons.Equal, 0));
+
+
+                TableQuery<EmployeeEntity> query2 = new TableQuery<EmployeeEntity>().Where(filterEntriesByID);
+                TableQuerySegment<EmployeeEntity> RowsEntries = await employeeTable.ExecuteQuerySegmentedAsync(query2, null);
+
+
+                List<EmployeeEntity> RowsOfEntries = new List<EmployeeEntity>();
+                foreach (EmployeeEntity Item in RowsEntries)
+                {
+
+                    RowsOfEntries.Add(Item);
+
+                }
+
+                EmployeeEntity firtsDateEntry = RowsOfEntries.OrderBy(o => o.DateReg).FirstOrDefault();
+
+                if (firtsDateEntry.IsConsolidated == true)
+                {
+                    i++;
+                    continue;
+                }
+
+                string filterOutputsID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, int.Parse(Id.ToString())),
+                                    TableOperators.And, TableQuery.GenerateFilterConditionForInt("Type", QueryComparisons.Equal, 1));
+
+
+                TableQuery<EmployeeEntity> query3 = new TableQuery<EmployeeEntity>().Where(filterOutputsID);
+                TableQuerySegment<EmployeeEntity> RowsOutputs = await employeeTable.ExecuteQuerySegmentedAsync(query3, null);
+
+
+
+                List<EmployeeEntity> RowsOfOutputs = new List<EmployeeEntity>();
+                foreach (EmployeeEntity Item in RowsOutputs)
+                {
+
+                    RowsOfOutputs.Add(Item);
+
+                }
+
+                EmployeeEntity lastDateOutput = RowsOfOutputs.OrderByDescending(o => o.DateReg).FirstOrDefault();
+
+                if (string.IsNullOrEmpty(lastDateOutput.DateReg.ToString()))
+                {
+                    i++;
+                    continue;
+                }
+
+                DateTime stardate = Convert.ToDateTime(firtsDateEntry.DateReg);
+
+                DateTime lastdate = Convert.ToDateTime(lastDateOutput.DateReg);
+
+                TimeSpan subtract = lastdate.Subtract(stardate);
+
+                int minutesInHours = subtract.Hours * 60;
+
+                int minutes = minutesInHours + subtract.Minutes;
+
+
+
+                ConsolidatedEntity consolidatedEntity = new ConsolidatedEntity
+                {
+                    IdEmployee = int.Parse(lastDateOutput.IdEmployee.ToString()),
+                    WorkedDate = lastDateOutput.DateReg,
+                    WorkedMinutes = minutes,
+                    ETag = "*",
+                    PartitionKey = "ConsolidatedReg",
+                    RowKey = Guid.NewGuid().ToString()
+                };
+
+                TableOperation addOperation = TableOperation.Insert(consolidatedEntity);
+                await consolidatedTable.ExecuteAsync(addOperation);
+
+                for (int k = 0; k < RowsOfEntries.Count; k++)
+                {
+                    //Update to consolidated records 
+                    TableOperation findOperation = TableOperation.Retrieve<EmployeeEntity>("EmployeeReg", RowsOfEntries[k].RowKey.ToString());
+                    TableResult findResult = await employeeTable.ExecuteAsync(findOperation);
+
+                    EmployeeEntity employeeEntity = (EmployeeEntity)findResult.Result;
+
+                    employeeEntity.IsConsolidated = true;
+
+                    TableOperation addOperation2 = TableOperation.Replace(employeeEntity);
+                    await employeeTable.ExecuteAsync(addOperation2);
+
+                }
+
+                for (int m = 0; m < RowsOfOutputs.Count; m++)
+                {
+                    //Update to consolidated records 
+                    TableOperation findOperation = TableOperation.Retrieve<EmployeeEntity>("EmployeeReg", RowsOfOutputs[m].RowKey.ToString());
+                    TableResult findResult = await employeeTable.ExecuteAsync(findOperation);
+
+                    EmployeeEntity employeeEntity = (EmployeeEntity)findResult.Result;
+
+                    employeeEntity.IsConsolidated = true;
+
+                    TableOperation addOperation2 = TableOperation.Replace(employeeEntity);
+                    await employeeTable.ExecuteAsync(addOperation2);
+
+                }
+
+                log.LogInformation($"New consolidated stored for employee {lastDateOutput.IdEmployee}.");
+
+                i++;
+
+                consolCount = i;
+
+            }
+
+            string message = $"Consolidation summary. records added: {consolCount}";
+            log.LogInformation(message);
+
+
+            return new OkObjectResult(new Response
+            {
+                IsSuccess = true,
+                Message = message,
+                Result = null
+            });
+        }
+
+
+        [FunctionName(nameof(GetAllConsolidatesByDate))]
+        public static async Task<IActionResult> GetAllConsolidatesByDate(
+              [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "consolidatedreg/{date}")] HttpRequest req,
+              [Table("consolidatedreg", Connection = "AzureWebJobsStorage")] CloudTable consolidatedTable,
+              string date,
+              ILogger log)
+        {
+            log.LogInformation($"Get all consolidates by date: {date}, received.");
+
+            string filterNotConsolidatedID = TableQuery.GenerateFilterConditionForDate("WorkedDate", QueryComparisons.GreaterThanOrEqual, Convert.ToDateTime(date));
+
+            TableQuery<ConsolidatedEntity> queryToConsolidate = new TableQuery<ConsolidatedEntity>().Where(filterNotConsolidatedID);
+            TableQuerySegment<ConsolidatedEntity> records = await consolidatedTable.ExecuteQuerySegmentedAsync(queryToConsolidate, null);
+
+            if (records == null)
+            {
+                return new BadRequestObjectResult(new Response
+                {
+                    IsSuccess = false,
+                    Message = "Consolidates not found."
+                });
+
+            }
+
+            string message = $"Get Consolidates by date: {date}, completed.";
+            log.LogInformation(message);
+
+
+            return new OkObjectResult(new Response
+            {
+                IsSuccess = true,
+                Message = message,
+                Result = records
 
             });
         }

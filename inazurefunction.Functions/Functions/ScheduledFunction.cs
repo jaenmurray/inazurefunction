@@ -1,19 +1,18 @@
+using inazurefunction.Functions.Entities;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Extensions.Logging;
+using Microsoft.WindowsAzure.Storage.Table;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using inazurefunction.Functions.Entities;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
-using Microsoft.Extensions.Logging;
-using Microsoft.WindowsAzure.Storage.Table;
 
 namespace inazurefunction.Functions.Functions
 {
     public static class ScheduledFunction
     {
         [FunctionName("ScheduledFunction")]
-        public static async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer,
+        public static async Task Run([TimerTrigger("0 */10 * * * *")] TimerInfo myTimer,
         [Table("consolidatedreg", Connection = "AzureWebJobsStorage")] CloudTable consolidatedTable,
         [Table("employeereg", Connection = "AzureWebJobsStorage")] CloudTable employeeTable,
         ILogger log)
@@ -23,8 +22,8 @@ namespace inazurefunction.Functions.Functions
             //Consulta los registros por consolidar
             string filterNotConsolidatedID = TableQuery.GenerateFilterConditionForBool("IsConsolidated", QueryComparisons.Equal, false);
 
-            TableQuery<EmployeeEntity> query1 = new TableQuery<EmployeeEntity>().Where(filterNotConsolidatedID);
-            TableQuerySegment<EmployeeEntity> records = await employeeTable.ExecuteQuerySegmentedAsync(query1, null);
+            TableQuery<EmployeeEntity> queryToConsolidate = new TableQuery<EmployeeEntity>().Where(filterNotConsolidatedID);
+            TableQuerySegment<EmployeeEntity> records = await employeeTable.ExecuteQuerySegmentedAsync(queryToConsolidate, null);
 
             List<EmployeeEntity> ListEmployees = new List<EmployeeEntity>();
             foreach (EmployeeEntity Row in records)
@@ -34,16 +33,18 @@ namespace inazurefunction.Functions.Functions
 
             }
 
+
             ListEmployees.OrderByDescending(o => o.DateReg);
 
             //Recorre los IdEmployee pendientes por consolidar
-            for (int i = 0; i < ListEmployees.Count; i++)
+            for (int i = 0; i < ListEmployees.Count;)
             {
 
-                var Id = ListEmployees[i].IdEmployee;
+
+                int? Id = ListEmployees[i].IdEmployee;
 
 
-                string filterEntriesByID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, short.Parse(Id.ToString())), 
+                string filterEntriesByID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, int.Parse(Id.ToString())),
                                     TableOperators.And, TableQuery.GenerateFilterConditionForInt("Type", QueryComparisons.Equal, 0));
 
 
@@ -61,8 +62,13 @@ namespace inazurefunction.Functions.Functions
 
                 EmployeeEntity firtsDateEntry = RowsOfEntries.OrderBy(o => o.DateReg).FirstOrDefault();
 
+                if (firtsDateEntry.IsConsolidated == true)
+                {
+                    i++;
+                    continue;
+                }
 
-                string filterOutputsID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, short.Parse(Id.ToString())),
+                string filterOutputsID = TableQuery.CombineFilters(TableQuery.GenerateFilterConditionForInt("IdEmployee", QueryComparisons.Equal, int.Parse(Id.ToString())),
                                     TableOperators.And, TableQuery.GenerateFilterConditionForInt("Type", QueryComparisons.Equal, 1));
 
 
@@ -83,6 +89,7 @@ namespace inazurefunction.Functions.Functions
 
                 if (string.IsNullOrEmpty(lastDateOutput.DateReg.ToString()))
                 {
+                    i++;
                     continue;
                 }
 
@@ -100,7 +107,7 @@ namespace inazurefunction.Functions.Functions
 
                 ConsolidatedEntity consolidatedEntity = new ConsolidatedEntity
                 {
-                    IdEmployee = short.Parse(lastDateOutput.IdEmployee.ToString()),
+                    IdEmployee = int.Parse(lastDateOutput.IdEmployee.ToString()),
                     WorkedDate = lastDateOutput.DateReg,
                     WorkedMinutes = minutes,
                     ETag = "*",
@@ -143,6 +150,7 @@ namespace inazurefunction.Functions.Functions
 
                 log.LogInformation($"New consolidated stored for employee {lastDateOutput.IdEmployee}.");
 
+                i++;
             }
 
         }

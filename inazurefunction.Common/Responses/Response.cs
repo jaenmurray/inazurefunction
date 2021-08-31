@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace inazurefunction.Common.Responses
+﻿namespace inazurefunction.Common.Responses
 {
     public class Response
     {
