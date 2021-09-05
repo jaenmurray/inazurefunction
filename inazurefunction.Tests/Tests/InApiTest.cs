@@ -8,6 +8,7 @@ using Xunit;
 using inazurefunction.Tests.Helpers;
 using inazurefunction.Functions.Functions;
 using inazurefunction.Functions.Entities;
+using System.Collections.Generic;
 
 namespace inazurefunction.Tests.Tests
 {
@@ -54,10 +55,13 @@ namespace inazurefunction.Tests.Tests
             // Arrange
             MockCloudTableEmployeeReg mockEmployeeReg = new MockCloudTableEmployeeReg(new Uri("http://127.0.0.1:10002/devstoreaccount1/reports"));
             EmployeeReg empRequest = TestFactory.GetEmployeeRegRequest();
+            EmployeeEntity employeeEntity = TestFactory.GetEmployeeEntity();
             DefaultHttpRequest request = TestFactory.CreateHttpRequest(empRequest);
 
             // Act
-            IActionResult response = await InApi.GetAllEmployeeRegs(request, mockEmployeeReg, logger);
+            IActionResult response;
+            
+            response = (IActionResult)(List<EmployeeEntity>)await InApi.GetAllEmployeeRegs(request, mockEmployeeReg, logger);
 
             // Assert
             OkObjectResult result = (OkObjectResult)response;
